@@ -6,14 +6,21 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gofrs/uuid"
+	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type user struct {
 	Name     string
 	Password []byte
+}
+
+type myCustomClaims struct {
+	SessionId string
+	*jwt.RegisteredClaims
 }
 
 var registeredUsers map[uuid.UUID]user
@@ -26,6 +33,7 @@ func main() {
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/login", login)
 	http.HandleFunc("/check", check)
+	http.HandleFunc("/createToken", createToken)
 	http.HandleFunc("/users", displayUsers)
 	log.Println("Launching server on port 8080...")
 	http.ListenAndServe(":8080", nil)
@@ -159,4 +167,45 @@ func getUser(username string) uuid.UUID {
 		}
 	}
 	return [16]byte{}
+}
+
+func createToken(w http.ResponseWriter, r *http.Request) {
+	myKey := []byte("Thisismykey")
+	mySessionCookie, err := r.Cookie("session_id")
+	if err != nil {
+		mySessionCookie = &http.Cookie{Name: "session_id", Value: "1234123412341234"}
+	}
+
+	myClaim := myCustomClaims{
+		mySessionCookie.Value,
+		&jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Unix(1516239022, 0)),
+			Issuer:    "myIssuer",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, myClaim)
+
+	signedSignature, err := token.SignedString(myKey)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error while creating the signed signature: %v", err), http.StatusInternalServerError)
+	}
+	io.WriteString(w, signedSignature)
+	return
+}
+
+func parseToken(ss string) {
+	myKey := []byte("Thisismykey")
+
+	token, err := jwt.ParseWithClaims(ss, &myCustomClaims{}, func(ss *jwt.Token) (interface{}, error) {
+		if ss.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+			return nil, fmt.Errorf("Not the same Method in signature")
+		}
+		return ss, nil
+	})
+	if err != nil {
+		log.Fatal("Possible hack")
+	}
+	claims := token.(*myCustomClaims)
+	io.WriteString(w, claims)
+	return
 }
