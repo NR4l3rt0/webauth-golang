@@ -34,6 +34,7 @@ func main() {
 	http.HandleFunc("/login", login)
 	http.HandleFunc("/check", check)
 	http.HandleFunc("/createToken", createToken)
+	http.HandleFunc("/getSessionIDFromToken", getSessionIDFromToken)
 	http.HandleFunc("/users", displayUsers)
 	log.Println("Launching server on port 8080...")
 	http.ListenAndServe(":8080", nil)
@@ -171,15 +172,16 @@ func getUser(username string) uuid.UUID {
 
 func createToken(w http.ResponseWriter, r *http.Request) {
 	myKey := []byte("Thisismykey")
+
 	mySessionCookie, err := r.Cookie("session_id")
 	if err != nil {
-		mySessionCookie = &http.Cookie{Name: "session_id", Value: "1234123412341234"}
+		mySessionCookie = &http.Cookie{Name: "session_id", Value: "34123412"}
 	}
 
 	myClaim := myCustomClaims{
 		mySessionCookie.Value,
 		&jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Unix(1516239022, 0)),
+			ExpiresAt: jwt.NewNumericDate(time.Unix(3516239022, 0)),
 			Issuer:    "myIssuer",
 		},
 	}
@@ -193,19 +195,28 @@ func createToken(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func parseToken(ss string) {
-	myKey := []byte("Thisismykey")
+func parseToken(ss string) string {
 
-	token, err := jwt.ParseWithClaims(ss, &myCustomClaims{}, func(ss *jwt.Token) (interface{}, error) {
-		if ss.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+	myKey := []byte("Thisismykey")
+	token, err := jwt.ParseWithClaims(ss, &myCustomClaims{}, func(t *jwt.Token) (interface{}, error) {
+		if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, fmt.Errorf("Not the same Method in signature")
 		}
-		return ss, nil
+		return myKey, nil
 	})
 	if err != nil {
-		log.Fatal("Possible hack")
+		log.Fatalf("Possible hack: %v", err)
 	}
-	claims := token.(*myCustomClaims)
-	io.WriteString(w, claims)
+	claims := token.Claims.(*myCustomClaims)
+	return claims.SessionId
+}
+
+func getSessionIDFromToken(w http.ResponseWriter, r *http.Request) {
+
+	if token, ok := r.URL.Query()["token"]; ok {
+		io.WriteString(w, parseToken(token[0]))
+		return
+	}
+	http.Error(w, "Session not established yet", http.StatusBadRequest)
 	return
 }
